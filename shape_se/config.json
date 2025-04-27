@@ -1,0 +1,7 @@
+{
+  "camera_id": 0,
+  "threshold": 95,
+  "shape_path": "contorno-mapa-SE.png",
+  "background_path": "assets/flag-se.jpg",
+  "mirror_mode": true
+}
