@@ -264,9 +264,10 @@ class Game:
             body_mask_processed = cv2.dilate(body_mask_resized, np.ones((7, 7), np.uint8), iterations=3)
             body_bool = body_mask_processed > 0
             
-            # Usar o contorno como máscara
+            # Usar o contorno como máscara para a forma
             contorno_surface = pygame.Surface(self.contorno_img.get_size(), pygame.SRCALPHA)
-            contorno_surface.blit(self.contorno_img, (0, 0))
+            contorno_surface.fill((0, 0, 0, 0))  # Inicializar transparente
+            contorno_surface.blit(self.shape_img, (0, 0))  # Usar shape_img em vez do contorno
             shape_array = pygame.surfarray.array_alpha(contorno_surface)
             shape_bool = shape_array > 10  # Limiar para detectar a forma
             
@@ -274,49 +275,40 @@ class Game:
             inside_mask = np.logical_and(body_bool, shape_bool)
             outside_mask = np.logical_and(body_bool, np.logical_not(shape_bool))
             
-            # Criar arrays de cores para visualização
-            color_array = np.zeros((shape_surface.get_height(), shape_surface.get_width(), 4), dtype=np.uint8)
+            # Criar uma única superfície de visualização
+            visual_surface = pygame.Surface(shape_surface.get_size(), pygame.SRCALPHA)
             
-            # Definir cores: verde para dentro do contorno e vermelho para fora
-            color_array[inside_mask] = [0, 255, 0, 180]  # Verde semi-transparente
-            color_array[outside_mask] = [255, 0, 0, 180]  # Vermelho semi-transparente
-            
-            # Fazer o fundo da forma levemente colorido para visualização do progresso
-            background_mask = np.logical_and(np.logical_not(inside_mask), shape_bool)
-            color_array[background_mask] = [100, 100, 100, 50]  # Cinza bem transparente
-            
-            # Converter para superfície Pygame
-            color_surface = pygame.surfarray.make_surface(color_array[:,:,:3].swapaxes(0, 1))
-            # Aplicar canal alpha
-            color_surface.set_alpha(180)
+            # Preencher áreas - FUNDO CINZA MUITO TRANSPARENTE
+            for y in range(visual_surface.get_height()):
+                for x in range(visual_surface.get_width()):
+                    if y < shape_bool.shape[0] and x < shape_bool.shape[1]:
+                        # Dentro da forma não preenchida - cinza transparente
+                        if shape_bool[y, x] and not inside_mask[y, x]:
+                            visual_surface.set_at((x, y), (150, 150, 150, 30))
+                        # Dentro da forma E preenchida - verde
+                        elif inside_mask[y, x]:
+                            visual_surface.set_at((x, y), (0, 255, 0, 180))
+                        # Fora da forma mas com corpo - vermelho
+                        elif outside_mask[y, x]:
+                            visual_surface.set_at((x, y), (255, 0, 0, 180))
             
             # Colocar na tela
-            self.screen.blit(color_surface, self.shape_pos)
+            self.screen.blit(visual_surface, self.shape_pos)
             
-            # Desenhar apenas o contorno por cima sem preenchimento
-            # Usar preto para o contorno
+            # Desenhar apenas UM contorno preto por cima de tudo
+            pygame.draw.rect(self.screen, (0, 0, 0, 0), 
+                            (self.shape_pos[0], self.shape_pos[1], 
+                            visual_surface.get_width(), visual_surface.get_height()), 1)
+            
+            # Desenhar o contorno usando a imagem original
             contorno_final = self.contorno_img.copy()
-            outline_surface = pygame.Surface(contorno_final.get_size(), pygame.SRCALPHA)
+            # Colorir o contorno de PRETO (não branco, não cinza)
+            for y in range(contorno_final.get_height()):
+                for x in range(contorno_final.get_width()):
+                    if contorno_final.get_at((x, y))[3] > 50:  # Se não for transparente
+                        contorno_final.set_at((x, y), (0, 0, 0, 255))  # Preto sólido
             
-            # Fazer o contorno pulsar quando estiver próximo da vitória
-            contorno_alpha = 255
-            contorno_color = (0, 0, 0)  # Preto como padrão
-            
-            # Se estiver perto de atingir o threshold, fazer o contorno pulsar em verde
-            if self.cobertura_interna > self.threshold * 0.8:
-                # Animação pulsante
-                self.contorno_pulse = (self.contorno_pulse + 0.1) % (2 * np.pi)
-                pulse_intensity = int(128 + 127 * np.sin(self.contorno_pulse))
-                
-                # Misturar preto com verde baseado na proximidade do threshold
-                proximity_ratio = min(1.0, self.cobertura_interna / self.threshold)
-                green_component = int(255 * proximity_ratio)
-                
-                # Cor pulsante
-                contorno_color = (0, pulse_intensity, 0)  # Verde pulsante
-            
-            outline_surface.fill((*contorno_color, contorno_alpha))
-            contorno_final.blit(outline_surface, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+            # Colocar o contorno na tela
             self.screen.blit(contorno_final, self.shape_pos)
             
             # Mostrar instrução de acordo com o progresso

@@ -171,8 +171,8 @@ class VisionProcessor:
         shape_mask_bin = shape_mask > 0
 
         # Apply stronger morphological operations to improve the body mask
-        kernel = np.ones((11, 11), np.uint8)  # Kernel ainda maior
-        body_mask_bin = cv2.dilate(body_mask_bin.astype(np.uint8), kernel, iterations=5)  # Mais iterações
+        kernel = np.ones((13, 13), np.uint8)  # Kernel ainda maior para preencher mais áreas
+        body_mask_bin = cv2.dilate(body_mask_bin.astype(np.uint8), kernel, iterations=6)  # Mais iterações
         body_mask_bin = cv2.erode(body_mask_bin, kernel, iterations=1)
         body_mask_bin = body_mask_bin > 0  # Convert back to boolean
 
@@ -208,11 +208,11 @@ class VisionProcessor:
             return 0
 
         # A porcentagem de preenchimento agora é mais influenciada pela cobertura interna
-        # e menos penalizada pelo excesso
-        percentage = cobertura_interna * (1 - excesso_percentual/200)
+        # e menos penalizada pelo excesso (pra facilitar o jogo)
+        percentage = cobertura_interna * (1 - excesso_percentual/400)  # Penalidade reduzida pelo excesso
         
         # Apply a boost para facilitar alcançar o threshold
-        percentage = min(100, percentage * 1.3)  # Boost de 30%
+        percentage = min(100, percentage * 1.5)  # Boost aumentado para 50%
 
         return percentage
 
