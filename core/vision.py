@@ -87,7 +87,27 @@ class VisionProcessor:
 
         # Convert the mask to a binary numpy array
         mask = np.where(category_mask.numpy_view() == 1, 255, 0).astype(np.uint8)
-
+        
+        # Aplicar processamento adicional para melhorar a detecção
+        kernel = np.ones((7, 7), np.uint8)
+        mask = cv2.dilate(mask, kernel, iterations=3)
+        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=3)
+        
+        # Inverter a máscara para casos onde a segmentação pode estar invertida
+        mask_count = cv2.countNonZero(mask)
+        total_pixels = mask.shape[0] * mask.shape[1]
+        
+        # Se mais de 70% da imagem está marcada, provavelmente está invertida
+        if mask_count > 0.7 * total_pixels:
+            print("Mask inverted - detected as background instead of foreground")
+            mask = 255 - mask
+        
+        # Verificar se a máscara contém algum pixel não zero
+        if cv2.countNonZero(mask) == 0:
+            print("Warning: Empty body mask detected!")
+        else:
+            print(f"Body mask detected: {cv2.countNonZero(mask)} pixels of {total_pixels} ({cv2.countNonZero(mask)/total_pixels*100:.1f}%)")
+        
         return mask
 
     def calculate_fill_percentage(self, body_mask, shape_mask):
@@ -96,10 +116,10 @@ class VisionProcessor:
         body_mask_bin = body_mask > 0
         shape_mask_bin = shape_mask > 0
 
-        # Apply some morphological operations to improve the body mask
-        # This helps with filling small gaps in the segmentation
-        kernel = np.ones((5, 5), np.uint8)
-        body_mask_bin = cv2.dilate(body_mask_bin.astype(np.uint8), kernel, iterations=2)
+        # Apply stronger morphological operations to improve the body mask
+        # This helps with filling gaps in the segmentation
+        kernel = np.ones((11, 11), np.uint8)  # Kernel ainda maior
+        body_mask_bin = cv2.dilate(body_mask_bin.astype(np.uint8), kernel, iterations=5)  # Mais iterações
         body_mask_bin = cv2.erode(body_mask_bin, kernel, iterations=1)
         body_mask_bin = body_mask_bin > 0  # Convert back to boolean
 
@@ -107,15 +127,27 @@ class VisionProcessor:
         overlap = np.sum(np.logical_and(shape_mask_bin, body_mask_bin))
         total_shape = np.sum(shape_mask_bin)
 
+        # Calcular quanto do corpo está fora do shape (excesso)
+        excesso = np.sum(np.logical_and(body_mask_bin, np.logical_not(shape_mask_bin)))
+        
+        # Armazenar o excesso e sobreposição para uso na visualização
+        self.excesso_percentual = min(100, (excesso / total_shape) * 100) if total_shape > 0 else 0
+        self.overlap_area = overlap
+        self.total_shape_area = total_shape
+        self.body_mask_area = np.sum(body_mask_bin)
+        
+        print(f"Overlap: {overlap} pixels, Shape: {total_shape} pixels, Body: {np.sum(body_mask_bin)} pixels")
+        print(f"Fill percentage: {(overlap/total_shape*100) if total_shape > 0 else 0:.1f}%, Excess: {self.excesso_percentual:.1f}%")
+
         if total_shape == 0:
             return 0
 
         # Calculate percentage
         percentage = (overlap / total_shape) * 100
 
-        # Apply a small boost to make it easier to reach the threshold
+        # Apply a stronger boost to make it easier to reach the threshold
         # This helps compensate for imperfect segmentation
-        percentage = min(100, percentage * 1.1)  # 10% boost, capped at 100%
+        percentage = min(100, percentage * 1.25)  # Aumentando o boost para 25%
 
         return percentage
 

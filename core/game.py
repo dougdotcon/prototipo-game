@@ -120,6 +120,9 @@ class Game:
         # Calculate fill percentage
         percentage = self.vision.calculate_fill_percentage(body_mask_resized, self.shape_mask)
         self.current_percentage = percentage
+        
+        # Obter o percentual de excesso (corpo fora do contorno)
+        self.excesso_percentual = getattr(self.vision, 'excesso_percentual', 0)
 
         # Check for victory
         if percentage >= self.threshold and not self.victory:
@@ -154,14 +157,14 @@ class Game:
         # Draw title
         title_font = pygame.font.Font(None, 72)
         title_text = title_font.render("Shape SE - Reconhecimento Corporal", True, (255, 255, 255))
-        title_rect = title_text.get_rect(center=(self.width // 2, self.height // 4))
+        title_rect = title_text.get_rect(center=(self.width // 2, self.height // 5))
         self.screen.blit(title_text, title_rect)
 
         # Draw instructions
         instruction_font = pygame.font.Font(None, 48)
         instructions = [
             "Posicione seu corpo para preencher o contorno do estado de Sergipe",
-            "Tente atingir 95% de preenchimento para vencer",
+            f"Tente atingir {self.threshold}% de preenchimento para vencer",
             "",
             "Controles:",
             "ESPAÇO - iniciar o jogo",
@@ -173,9 +176,13 @@ class Game:
             "ESC - sair"
         ]
 
+        # Calcular espaçamento proporcional à altura da tela
+        line_spacing = int(self.height * 0.045)  # Reduzido de 60 para 4.5% da altura da tela
+        start_y = self.height // 3  # Começa um pouco mais acima
+
         for i, instruction in enumerate(instructions):
             text = instruction_font.render(instruction, True, (255, 255, 255))
-            text_rect = text.get_rect(center=(self.width // 2, self.height // 2 + i * 60))
+            text_rect = text.get_rect(center=(self.width // 2, start_y + i * line_spacing))
             self.screen.blit(text, text_rect)
 
         pygame.display.flip()
@@ -225,13 +232,66 @@ class Game:
         # Draw shape with progress overlay
         shape_overlay = self.shape_img.copy()
 
-        # Create a progress overlay based on current percentage
+        # Create a progress overlay based on current percentage and excesso
         if not self.victory:
-            progress_alpha = int(min(self.current_percentage, 90) * 255 / 100)
-            progress_surface = pygame.Surface(shape_overlay.get_size(), pygame.SRCALPHA)
-            progress_surface.fill((0, 255, 0, progress_alpha))
-            shape_overlay.blit(progress_surface, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+            # Informações extras para debug
+            font = pygame.font.Font(None, 36)
+            percentage_text = font.render(f"Preenchimento: {self.current_percentage:.1f}%", True, (255, 255, 255))
+            self.screen.blit(percentage_text, (20, 20))
+            
+            excesso_text = font.render(f"Excesso: {self.excesso_percentual:.1f}%", True, (255, 100, 100))
+            self.screen.blit(excesso_text, (20, 60))
+            
+            # Mostrar informações de debug adicionais
+            if hasattr(self.vision, 'overlap_area') and hasattr(self.vision, 'total_shape_area'):
+                debug_text = font.render(
+                    f"Área sobreposta: {self.vision.overlap_area} / {self.vision.total_shape_area} pixels", 
+                    True, (255, 255, 100)
+                )
+                self.screen.blit(debug_text, (20, 100))
+            
+            # Redimensionar a máscara do corpo para o tamanho da forma
+            if body_mask is not None:
+                # Criar uma cópia do contorno para manipulação
+                contorno = self.contorno_img.copy()
+                
+                # Redimensionar a máscara do corpo
+                body_mask_resized = cv2.resize(body_mask, (shape_overlay.get_width(), shape_overlay.get_height()))
+                
+                # Aplicar operações morfológicas para melhorar a visualização
+                kernel = np.ones((7, 7), np.uint8)
+                body_mask_dilated = cv2.dilate(body_mask_resized, kernel, iterations=3)
+                
+                # Criar máscaras para partes dentro e fora do contorno
+                shape_mask = pygame.surfarray.array_alpha(shape_overlay)
+                body_mask_np = body_mask_dilated > 0
 
+                # Método alternativo 
+                # Criar uma superfície para visualização da área coberta (verde)
+                green_surface = pygame.Surface(shape_overlay.get_size(), pygame.SRCALPHA)
+                green_surface.fill((0, 0, 0, 0))  # Inicialmente transparente
+                
+                # Desenhar corpo como verde brilhante
+                for y in range(body_mask_np.shape[0]):
+                    for x in range(body_mask_np.shape[1]):
+                        if body_mask_np[y, x] and x < shape_mask.shape[1] and y < shape_mask.shape[0] and shape_mask[y, x] > 0:
+                            # Dentro do contorno - verde
+                            pygame.draw.circle(green_surface, (0, 255, 0, 200), (x, y), 3)  # Círculos verdes
+
+                # Desenhar excesso como vermelho 
+                red_surface = pygame.Surface(shape_overlay.get_size(), pygame.SRCALPHA)
+                red_surface.fill((0, 0, 0, 0))  # Inicialmente transparente
+                
+                for y in range(body_mask_np.shape[0]):
+                    for x in range(body_mask_np.shape[1]):
+                        if body_mask_np[y, x] and (x >= shape_mask.shape[1] or y >= shape_mask.shape[0] or shape_mask[y, x] == 0):
+                            # Fora do contorno - vermelho
+                            pygame.draw.circle(red_surface, (255, 0, 0, 200), (x, y), 3)  # Círculos vermelhos
+                
+                # Aplicar as superfícies coloridas
+                self.screen.blit(green_surface, self.shape_pos)
+                self.screen.blit(red_surface, self.shape_pos)
+                
         # Draw shape
         self.screen.blit(shape_overlay, self.shape_pos)
 
@@ -256,9 +316,7 @@ class Game:
 
         # Draw percentage and timer
         font = pygame.font.Font(None, 36)
-        percentage_text = font.render(f"Preenchimento: {self.current_percentage:.1f}%", True, (255, 255, 255))
-        self.screen.blit(percentage_text, (20, 20))
-
+        
         # Draw timer if it's running
         if self.timer_running and self.start_time is not None:
             # Calculate current time
