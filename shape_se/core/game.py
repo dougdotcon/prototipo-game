@@ -11,8 +11,23 @@ class Game:
         self.vision = vision_processor
         self.config = config
         self.threshold = config.get("threshold", 95)
-        self.shape_path = config.get("shape_path", "assets/shape-se.png")
-        self.background_path = config.get("background_path", "assets/flag-se.jpg")
+
+        # Get base directory
+        self.base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+        # Set paths with absolute paths
+        self.shape_path = os.path.join(self.base_dir, config.get("shape_path", "assets/shape-se.png"))
+        self.background_path = os.path.join(self.base_dir, config.get("background_path", "assets/flag-se.jpg"))
+        self.contorno_path = os.path.join(self.base_dir, "contorno-mapa-SE.png")
+
+        print(f"Shape path: {self.shape_path}")
+        print(f"Background path: {self.background_path}")
+        print(f"Contorno path: {self.contorno_path}")
+
+        # Check if files exist
+        print(f"Shape file exists: {os.path.exists(self.shape_path)}")
+        print(f"Background file exists: {os.path.exists(self.background_path)}")
+        print(f"Contorno file exists: {os.path.exists(self.contorno_path)}")
 
         # Initialize pygame
         pygame.init()
@@ -31,6 +46,16 @@ class Game:
         self.victory_time = 0
         self.current_percentage = 0
         self.in_menu = True  # Start in menu mode
+        self.show_background = False  # Background invisible by default
+        self.background_opacity = 180  # Default opacity (0-255)
+
+        # Timer variables
+        self.start_time = None
+        self.elapsed_time = 0
+        self.timer_running = False
+
+        # Debug options
+        self.show_body_mask = True  # Show body segmentation mask for debugging
 
         # Create snapshots directory if it doesn't exist
         if not os.path.exists("snapshots"):
@@ -56,14 +81,32 @@ class Game:
             self.shape_mask = np.any(shape_array > 0, axis=2).astype(np.uint8) * 255
 
             # Load background image
-            self.background = pygame.image.load(self.background_path).convert()
-            self.background = pygame.transform.scale(self.background, (self.width, self.height))
+            print(f"Loading background from: {self.background_path}")
+            try:
+                self.background = pygame.image.load(self.background_path).convert()
+                print(f"Background loaded successfully. Size: {self.background.get_size()}")
+                self.background = pygame.transform.scale(self.background, (self.width, self.height))
+                print(f"Background scaled to: {self.background.get_size()}")
+            except Exception as e:
+                print(f"Error loading background: {e}")
+                # Create a fallback background (blue color)
+                self.background = pygame.Surface((self.width, self.height))
+                self.background.fill((0, 0, 128))  # Dark blue
+                print("Created fallback background")
+
+            # Load contorno image
+            print(f"Loading contorno from: {self.contorno_path}")
+            self.contorno_img = pygame.image.load(self.contorno_path).convert_alpha()
+            self.contorno_img = pygame.transform.scale(self.contorno_img, (int(self.height * 0.8), int(self.height * 0.8)))
+            print(f"Contorno loaded successfully. Size: {self.contorno_img.get_size()}")
 
             # Position for the shape (centered)
             self.shape_pos = ((self.width - self.shape_img.get_width()) // 2,
                             (self.height - self.shape_img.get_height()) // 2)
         except Exception as e:
             print(f"Error loading images: {e}")
+            import traceback
+            traceback.print_exc()
             raise
 
     def process_frame(self, frame):
@@ -120,8 +163,14 @@ class Game:
             "Posicione seu corpo para preencher o contorno do estado de Sergipe",
             "Tente atingir 95% de preenchimento para vencer",
             "",
-            "Pressione ESPAÇO para iniciar",
-            "Pressione ESC para sair"
+            "Controles:",
+            "ESPAÇO - iniciar o jogo",
+            "B - alternar visibilidade do fundo",
+            "+ / - - ajustar opacidade do fundo",
+            "T - pausar/retomar o temporizador",
+            "R - reiniciar o temporizador",
+            "M - mostrar/ocultar visualização do corpo",
+            "ESC - sair"
         ]
 
         for i, instruction in enumerate(instructions):
@@ -131,8 +180,14 @@ class Game:
 
         pygame.display.flip()
 
-    def render(self, frame, body_mask):
-        """Render the game screen."""
+    def render(self, frame, body_mask=None):
+        """Render the game screen.
+
+        Args:
+            frame: The webcam frame to display
+            body_mask: The segmentation mask for visualization and debugging
+        """
+        # Use the class variable for body mask visibility
         # Convert webcam frame to pygame surface and scale to full screen
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         frame_surface = pygame.surfarray.make_surface(frame_rgb.swapaxes(0, 1))
@@ -141,11 +196,31 @@ class Game:
         # Draw webcam frame as background
         self.screen.blit(frame_surface, (0, 0))
 
-        # Draw background with transparency
-        background_surface = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
-        background_surface.blit(self.background, (0, 0))
-        background_surface.set_alpha(100)  # Semi-transparent background
-        self.screen.blit(background_surface, (0, 0))
+        # Draw body mask for debugging if available
+        if self.show_body_mask and body_mask is not None:
+            # Create a small preview of the body mask in the corner
+            mask_size = (int(self.width * 0.2), int(self.height * 0.2))
+            # Resize the mask to the preview size
+            body_mask_small = cv2.resize(body_mask, mask_size)
+            # Convert to RGB for visualization (white silhouette on black background)
+            body_mask_rgb = np.stack([body_mask_small] * 3, axis=2)
+            # Create pygame surface
+            mask_surface = pygame.surfarray.make_surface(body_mask_rgb.swapaxes(0, 1))
+            # Draw in bottom-right corner
+            self.screen.blit(mask_surface, (self.width - mask_size[0] - 10, self.height - mask_size[1] - 10))
+
+        # Draw background with transparency if enabled
+        if self.show_background:
+            # Create a copy of the background to avoid modifying the original
+            background_copy = self.background.copy()
+            # Apply the current opacity setting
+            background_copy.set_alpha(self.background_opacity)
+            self.screen.blit(background_copy, (0, 0))
+
+            # Draw a help text for background controls
+            font = pygame.font.Font(None, 24)
+            help_text = font.render("Pressione B para alternar fundo, + e - para ajustar opacidade", True, (255, 255, 255))
+            self.screen.blit(help_text, (10, self.height - 30))
 
         # Draw shape with progress overlay
         shape_overlay = self.shape_img.copy()
@@ -160,21 +235,39 @@ class Game:
         # Draw shape
         self.screen.blit(shape_overlay, self.shape_pos)
 
-        # Draw contorno (outline) on top of everything
-        try:
-            contorno_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "contorno-mapa-SE.png")
-            if not hasattr(self, 'contorno_img'):
-                print(f"Loading contorno from: {contorno_path}")
-                self.contorno_img = pygame.image.load(contorno_path).convert_alpha()
-                self.contorno_img = pygame.transform.scale(self.contorno_img, (int(self.height * 0.8), int(self.height * 0.8)))
-            self.screen.blit(self.contorno_img, self.shape_pos)
-        except Exception as e:
-            print(f"Error loading contorno: {e}")
+        # Draw contorno (outline) on top of everything with maximum contrast
+        # Make sure the contorno is visible by setting a high contrast color
+        contorno_overlay = self.contorno_img.copy()
 
-        # Draw percentage
+        # Apply a color filter to make it more visible (bright red with maximum opacity)
+        color_surface = pygame.Surface(contorno_overlay.get_size(), pygame.SRCALPHA)
+        color_surface.fill((255, 0, 0, 255))  # Bright red with maximum opacity
+        contorno_overlay.blit(color_surface, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+
+        # Draw the contorno with a slight offset to create a shadow effect
+        shadow_offset = 2
+        self.screen.blit(contorno_overlay, (self.shape_pos[0] + shadow_offset, self.shape_pos[1] + shadow_offset))
+
+        # Draw the main contorno
+        color_surface.fill((255, 255, 255, 255))  # Pure white with maximum opacity
+        contorno_overlay = self.contorno_img.copy()
+        contorno_overlay.blit(color_surface, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+        self.screen.blit(contorno_overlay, self.shape_pos)
+
+        # Draw percentage and timer
         font = pygame.font.Font(None, 36)
         percentage_text = font.render(f"Preenchimento: {self.current_percentage:.1f}%", True, (255, 255, 255))
         self.screen.blit(percentage_text, (20, 20))
+
+        # Draw timer if it's running
+        if self.timer_running and self.start_time is not None:
+            # Calculate current time
+            current_time = time.time() - self.start_time + self.elapsed_time
+            # Format time as minutes:seconds
+            minutes = int(current_time // 60)
+            seconds = int(current_time % 60)
+            timer_text = font.render(f"Tempo: {minutes:02d}:{seconds:02d}", True, (255, 255, 255))
+            self.screen.blit(timer_text, (self.width - timer_text.get_width() - 20, 20))
 
         # Draw victory message
         if self.victory:
@@ -195,6 +288,50 @@ class Game:
                     self.running = False
                 elif event.key == pygame.K_SPACE and self.in_menu:
                     self.in_menu = False  # Exit menu and start game
+                    # Start the timer when the game begins
+                    self.start_time = time.time()
+                    self.elapsed_time = 0
+                    self.timer_running = True
+                elif not self.in_menu:  # Only in game mode
+                    # Toggle background visibility with B key
+                    if event.key == pygame.K_b:
+                        self.show_background = not self.show_background
+                        print(f"Background visibility: {self.show_background}")
+
+                    # Increase background opacity with + key
+                    elif event.key == pygame.K_PLUS or event.key == pygame.K_KP_PLUS or event.key == pygame.K_EQUALS:
+                        self.background_opacity = min(255, self.background_opacity + 15)
+                        print(f"Background opacity: {self.background_opacity}")
+
+                    # Decrease background opacity with - key
+                    elif event.key == pygame.K_MINUS or event.key == pygame.K_KP_MINUS:
+                        self.background_opacity = max(0, self.background_opacity - 15)
+                        print(f"Background opacity: {self.background_opacity}")
+
+                    # Pause/resume timer with T key
+                    elif event.key == pygame.K_t:
+                        if self.timer_running:
+                            # Pause timer
+                            self.elapsed_time += time.time() - self.start_time
+                            self.timer_running = False
+                            print("Timer paused")
+                        else:
+                            # Resume timer
+                            self.start_time = time.time()
+                            self.timer_running = True
+                            print("Timer resumed")
+
+                    # Reset timer with R key
+                    elif event.key == pygame.K_r:
+                        self.start_time = time.time()
+                        self.elapsed_time = 0
+                        self.timer_running = True
+                        print("Timer reset")
+
+                    # Toggle body mask visualization with M key
+                    elif event.key == pygame.K_m:
+                        self.show_body_mask = not self.show_body_mask
+                        print(f"Body mask visualization: {self.show_body_mask}")
 
     def run(self):
         """Main game loop."""

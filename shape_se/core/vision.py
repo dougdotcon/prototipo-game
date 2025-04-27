@@ -16,12 +16,25 @@ class VisionProcessor:
 
     def initialize_camera(self):
         """Initialize the webcam capture."""
-        self.cap = cv2.VideoCapture(self.camera_id)
-        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
-        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
+        print(f"Initializing camera with ID: {self.camera_id}")
+        try:
+            self.cap = cv2.VideoCapture(self.camera_id)
 
-        if not self.cap.isOpened():
-            raise ValueError("Could not open webcam. Check camera_id in config.json")
+            # Try to set resolution, but don't fail if it doesn't work
+            try:
+                self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)  # Lower resolution to avoid issues
+                self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+                print("Camera resolution set to 1280x720")
+            except Exception as e:
+                print(f"Warning: Could not set camera resolution: {e}")
+
+            if not self.cap.isOpened():
+                raise ValueError("Could not open webcam. Check camera_id in config.json")
+
+            print("Camera initialized successfully")
+        except Exception as e:
+            print(f"Error initializing camera: {e}")
+            raise
 
     def initialize_selfie_segmenter(self):
         """Initialize the MediaPipe Selfie Segmentation model."""
@@ -83,6 +96,13 @@ class VisionProcessor:
         body_mask_bin = body_mask > 0
         shape_mask_bin = shape_mask > 0
 
+        # Apply some morphological operations to improve the body mask
+        # This helps with filling small gaps in the segmentation
+        kernel = np.ones((5, 5), np.uint8)
+        body_mask_bin = cv2.dilate(body_mask_bin.astype(np.uint8), kernel, iterations=2)
+        body_mask_bin = cv2.erode(body_mask_bin, kernel, iterations=1)
+        body_mask_bin = body_mask_bin > 0  # Convert back to boolean
+
         # Calculate overlap
         overlap = np.sum(np.logical_and(shape_mask_bin, body_mask_bin))
         total_shape = np.sum(shape_mask_bin)
@@ -92,6 +112,11 @@ class VisionProcessor:
 
         # Calculate percentage
         percentage = (overlap / total_shape) * 100
+
+        # Apply a small boost to make it easier to reach the threshold
+        # This helps compensate for imperfect segmentation
+        percentage = min(100, percentage * 1.1)  # 10% boost, capped at 100%
+
         return percentage
 
     def release(self):
