@@ -12,36 +12,14 @@ DISPLAY_SIZE = (640, 480)
 
 def game_start():
     """
-    Display the introduction screen and wait for the user to continue
-    or quit the game.
+    Configura o início do jogo e cria pasta para fotos.
 
     Returns:
-        (str): The next game state.
+        str: O próximo estado do jogo.
     """
-    game_view.display_introduction()
-    next_screen_state = game_controller.next_screen()
-    if next_screen_state == "continue":
-        return "instruction_screen"
-    if next_screen_state == "quit":
-        sys.exit()
-    return "start_screen"
-
-
-def show_instructions():
-    """
-    Display the instructions screen and wait for the user to continue
-    or quit the game.
-
-    Returns:
-        (str): The next game state.
-    """
-    game_view.display_instructions()
-    next_screen_state = game_controller.next_screen()
-    if next_screen_state == "continue":
-        return "playing_game"
-    if next_screen_state == "quit":
-        sys.exit()
-    return "instruction_screen"
+    import os
+    os.makedirs("fotos", exist_ok=True)  # Cria pasta para fotos
+    return "playing_game"
 
 
 def run_game():
@@ -114,7 +92,6 @@ def end_game():
 # a switch statement in other languages.
 GAME_STATES = {
     "start_screen": game_start,
-    "instruction_screen": show_instructions,
     "playing_game": run_game,
     "game_complete": end_game,
 }
@@ -126,9 +103,9 @@ if __name__ == "__main__":
     game_model = HoleInTheCameraGame()
     # Start the game and initialize pygame
     game_view.initialize_view()
-    # set current game state to start screen
-    current_game_state = "start_screen"
-    # Run the game until the user quits.
+    # Inicia direto no jogo
+    current_game_state = "start_screen"  # Apenas para criar pasta fotos
+    # Executa até o usuário sair
     while True:
         current_game_state = GAME_STATES[current_game_state]()
         if current_game_state == "game_complete":

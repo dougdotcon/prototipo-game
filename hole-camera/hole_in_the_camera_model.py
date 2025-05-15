@@ -256,6 +256,6 @@ class HoleInTheCameraGame:
             (bool): True if the user was successful in their last trial and
                 false if they weren't.
         """
-        if self._trial_score >= 70:
+        if self._trial_score >= 95:
             return True
         return False

@@ -183,22 +183,15 @@ class PygameViewer(HoleInTheWallView):
 
     def display_introduction(self):
         """
-        Display the introduction text.
+        Display está desabilitado conforme requisito do cliente.
         """
-        welcome_text = ["Welcome to Hole in the Camera!",
-                        "Press any key to continue",
-                        "Press esc to exit (Bye!)"]
-        self._display_background(0)
-        self._display_text(welcome_text, self._WHITE, self._BLACK)
+        pass
 
     def display_instructions(self):
         """
-        Display the instructions text.
+        Display está desabilitado conforme requisito do cliente.
         """
-        instruction_text = ["Instructions:", "Adjust your pose (or camera) to",\
-                        "fit into the holes.", "You have 10 sec each round!"]
-        self._display_background(0)
-        self._display_text(instruction_text, self._WHITE, self._BLACK)
+        pass
 
     def display_frame(self, frame, timer_text, camera_mask):
         """
@@ -222,30 +215,34 @@ class PygameViewer(HoleInTheWallView):
 
     def display_win(self, win_state, score):
         """
-        Check if the user has won or lost and display text in
-        pygame window corresponds to the result.
+        Exibe mensagem de vitória/derrota e captura foto se necessário.
 
-        Arg:
-            score (float): A float between 0 and 1 (inclusive) that represents
-            the accuracy of how well player fits through the hole.
-            win (bool): True if the user has won, False otherwise.
+        Args:
+            win_state (bool): True se ganhou, False se perdeu
+            score (float): Pontuação do jogador
         """
         if win_state:
-            # music stopped and then started to ensure it starts at the same
-            # point each time.
             mixer.music.stop()
-            win_sound = mixer.Sound(
-                "sound/win_notif.wav"
-            )
+            win_sound = mixer.Sound("sound/win_notif.wav")
             win_sound.play()
-            won_text = [f"Your score is: {int(score)}"]
+            
+            # Exibe mensagem de vitória
+            won_text = ["Viva Sergipe!", f"Pontuação: {int(score)}%"]
             self._display_background(2)
             self._display_text(won_text, self._BLACK, self._WHITE)
+            
+            # Captura e salva foto do jogador
+            cap = cv.VideoCapture(0)
+            ret, photo = cap.read()
+            if ret:
+                cv.imwrite("fotos/vencedor.jpg", photo)
+            cap.release()
+            
         else:
             mixer.music.stop()
             crash_sound = mixer.Sound("sound/loss_notif.wav")
             crash_sound.play()
-            lost_text = ["You lost!", f"Your score is {int(score)}"]
+            lost_text = ["Game Over", f"Pontuação: {int(score)}%"]
             self._display_background(1)
             self._display_text(lost_text, self._WHITE, self._BLACK)
 

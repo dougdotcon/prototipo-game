@@ -148,13 +148,16 @@ class OpenCVController(HoleInTheCameraController):
         Get the current time in the countdown timer.
 
         Returns:
-            counting_string (str): Current time in the countdown timer.
+            str: Current time in the countdown timer in MM:SS format.
         """
         self._current_time = pygame.time.get_ticks() - self._start_time
-        # 500 chosen to divide time by instead of 1000 to create a faster
-        # timer that isn't exactly related to seconds.
-        counting_string = f"{10-self._current_time//500}"
-        return counting_string
+        # Timer em milissegundos (5 minutos = 300000ms)
+        remaining_ms = 300000 - self._current_time
+        if remaining_ms < 0:
+            return "0:00"
+        minutes = remaining_ms // 60000
+        seconds = (remaining_ms % 60000) // 1000
+        return f"{minutes}:{seconds:02d}"
 
     def determine_end_timer(self):
         """
@@ -163,8 +166,7 @@ class OpenCVController(HoleInTheCameraController):
         Returns:
             bool: True if the time is up, False otherwise.
         """
-        # 5000 used to keep consistent with the timer click every 500 ms as
-        # defined by get_timer_string.
-        if 5000 - self._current_time < 0:
+        # Timer acaba após 5 minutos (300000ms)
+        if 300000 - self._current_time < 0:
             return True
         return False
